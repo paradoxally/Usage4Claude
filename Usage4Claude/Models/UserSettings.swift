@@ -419,6 +419,12 @@ class UserSettings: ObservableObject {
         return !accounts.isEmpty && !codexAccounts.isEmpty
     }
 
+    /// 是否进入"全部账户"形态：用户启用了开关且存在 2 个以上 Claude 账户
+    /// 为 true 时菜单栏每个账户显示一个 5 小时圆环，弹窗按账户分列显示
+    var isMultiAccountClaudeActive: Bool {
+        showAllAccountsInMenuBar && accounts.count >= 2
+    }
+
     // MARK: - 非敏感设置（存储在UserDefaults中）
 
     /// 菜单栏图标显示模式
@@ -536,6 +542,14 @@ class UserSettings: ObservableObject {
     @Published var showCodexResetAnnouncement: Bool {
         didSet {
             defaults.set(showCodexResetAnnouncement, forKey: "showCodexResetAnnouncement")
+            NotificationCenter.default.post(name: .settingsChanged, object: nil)
+        }
+    }
+
+    /// 是否在菜单栏中同时显示所有 Claude 账户（每个账户一个 5 小时圆环）
+    @Published var showAllAccountsInMenuBar: Bool {
+        didSet {
+            defaults.set(showAllAccountsInMenuBar, forKey: "showAllAccountsInMenuBar")
             NotificationCenter.default.post(name: .settingsChanged, object: nil)
         }
     }
@@ -921,6 +935,9 @@ class UserSettings: ObservableObject {
         // 加载 Codex 重置预告开关（Beta），默认开启
         self.showCodexResetAnnouncement = defaults.object(forKey: "showCodexResetAnnouncement") as? Bool ?? true
 
+        // 加载菜单栏多账户显示设置，默认开启
+        self.showAllAccountsInMenuBar = defaults.object(forKey: "showAllAccountsInMenuBar") as? Bool ?? true
+
         // 开机启动状态的加载已搬进 LaunchAtLoginManager.init()
 
         // MARK: - 初始化调试模式设置
@@ -1033,6 +1050,7 @@ class UserSettings: ObservableObject {
         customDisplayMenuBarOnly = false
         notificationsEnabled = true
         showCodexResetAnnouncement = true
+        showAllAccountsInMenuBar = true
 
         // 重置智能模式状态
         lastUtilization = nil

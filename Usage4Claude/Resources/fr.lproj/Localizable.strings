@@ -66,6 +66,10 @@
 "settings.general.interface_language" = "Langue de l'interface";
 "settings.general.language_hint" = "Changer la langue d'affichage de l'interface";
 "settings.general.reset_button" = "Réinitialiser par défaut";
+"settings.general.all_accounts_section" = "Comptes multiples";
+"settings.general.all_accounts_hint" = "Afficher tous les comptes Claude à la fois";
+"settings.general.show_all_accounts" = "Afficher tous les comptes dans la barre des menus";
+"settings.general.all_accounts_description" = "Chaque compte Claude affiche son propre anneau de 5 heures dans la barre des menus. Cliquez pour ouvrir une colonne par compte. Nécessite au moins deux comptes.";
 "icon_style.color_translucent" = "Couleur translucide";
 "icon_style.color_with_background" = "Couleur avec fond";
 "icon_style.monochrome" = "Monochrome";

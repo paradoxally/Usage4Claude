@@ -603,6 +603,51 @@ class MenuBarUI {
         button.image = icon
     }
 
+    /// 更新菜单栏图标（"全部账户"模式：每个 Claude 账户一个 5 小时圆环）
+    /// - Parameters:
+    ///   - orderedAccounts: 有序的 Claude 账户列表（决定圆环顺序）
+    ///   - usages: 各账户的用量数据（key 为 Account.id）
+    ///   - codexUsageData: 可选 Codex 用量数据（存在时在末尾追加 Codex 图标）
+    ///   - hasUpdate: 是否有可用更新
+    ///   - shouldShowBadge: 是否显示更新徽章
+    func updateMenuBarIconForAllAccounts(
+        orderedAccounts: [Account],
+        usages: [UUID: UsageData],
+        codexUsageData: CodexUsageData? = nil,
+        hasUpdate: Bool,
+        shouldShowBadge: Bool
+    ) {
+        guard let button = statusItem.button else { return }
+
+        let showBadge = hasUpdate && shouldShowBadge
+        let cacheKey = generateAllAccountsCacheKey(
+            orderedAccounts: orderedAccounts,
+            usages: usages,
+            codexUsageData: codexUsageData,
+            hasUpdate: showBadge
+        )
+
+        if let cachedImage = iconCache[cacheKey] {
+            button.image = cachedImage
+            return
+        }
+
+        let entries = orderedAccounts.map { (account: $0, data: usages[$0.id]) }
+        let icon = iconRenderer.createAllAccountsIcon(
+            accounts: entries,
+            codexUsageData: codexUsageData,
+            hasUpdate: showBadge,
+            button: button
+        )
+
+        if iconCache.count >= maxCacheSize {
+            iconCache.removeValue(forKey: iconCache.keys.first!)
+        }
+        iconCache[cacheKey] = icon
+
+        button.image = icon
+    }
+
     /// 清除图标缓存
     func clearIconCache() {
         iconCache.removeAll()
@@ -683,6 +728,31 @@ class MenuBarUI {
             key += "_badge"
         }
 
+        return key
+    }
+
+    /// 生成"全部账户"模式的图标缓存键（包含每个账户的 5 小时百分比）
+    private func generateAllAccountsCacheKey(
+        orderedAccounts: [Account],
+        usages: [UUID: UsageData],
+        codexUsageData: CodexUsageData?,
+        hasUpdate: Bool
+    ) -> String {
+        var key = "all_\(settings.iconStyleMode.rawValue)"
+        for account in orderedAccounts {
+            let prefix = account.id.uuidString.prefix(8)
+            if let percentage = usages[account.id]?.fiveHour?.percentage {
+                key += "_\(prefix)5h\(Int(percentage))"
+            } else {
+                key += "_\(prefix)nil"
+            }
+        }
+        if let codex = codexUsageData {
+            if let p = codex.primary { key += "_cxp\(Int(p.percentage))" }
+            if let s = codex.secondary { key += "_cxs\(Int(s.percentage))" }
+            if let e = codex.extraUsage?.percentage { key += "_cxe\(Int(e))" }
+        }
+        if hasUpdate { key += "_badge" }
         return key
     }
 

@@ -159,15 +159,118 @@ class ClaudeAPIService {
         }
     }
 
+    /// 获取指定账户的 Claude 使用情况（用于"全部账户"模式下的并发拉取）
+    /// 与单账户路径不同：直接使用传入账户自己的凭据，且使用独立的网络任务
+    /// （不共享 currentTask / 单账户 OAuth 缓存），因此可安全地对多个账户并发调用。
+    /// - Parameters:
+    ///   - account: 目标 Claude 账户（提供 organizationId 与 sessionKey）
+    ///   - completion: 完成回调（在主线程返回）
+    func fetchUsage(for account: Account, completion: @escaping (Result<UsageData, Error>) -> Void) {
+        #if DEBUG
+        // 调试模式：返回模拟数据（立即返回，无网络请求）
+        if settings.debugModeEnabled {
+            let mockData = createMockData()
+            DispatchQueue.main.async {
+                completion(.success(mockData))
+            }
+            return
+        }
+        #endif
+
+        guard !account.sessionKey.isEmpty else {
+            DispatchQueue.main.async { completion(.failure(UsageError.noCredentials)) }
+            return
+        }
+
+        // OAuth 账户：凭据是 refresh_token，走独立的 per-account OAuth usage 路径
+        if Self.isOAuthRefreshToken(account.sessionKey) {
+            fetchOAuthUsage(for: account, completion: completion)
+            return
+        }
+
+        guard !account.organizationId.isEmpty else {
+            DispatchQueue.main.async { completion(.failure(UsageError.noCredentials)) }
+            return
+        }
+
+        let dispatchGroup = DispatchGroup()
+        var mainUsageData: UsageData?
+        var extraUsageData: ExtraUsageData?
+        var mainError: Error?
+
+        // 主 Usage API
+        dispatchGroup.enter()
+        fetchMainUsage(organizationId: account.organizationId, sessionKey: account.sessionKey) { result in
+            switch result {
+            case .success(let data):
+                mainUsageData = data
+            case .failure(let error):
+                mainError = error
+            }
+            dispatchGroup.leave()
+        }
+
+        // Extra Usage API（可选，失败不影响主功能）
+        dispatchGroup.enter()
+        fetchExtraUsage(organizationId: account.organizationId, sessionKey: account.sessionKey) { result in
+            if case .success(let data) = result {
+                extraUsageData = data
+            }
+            dispatchGroup.leave()
+        }
+
+        dispatchGroup.notify(queue: .main) {
+            if let error = mainError {
+                completion(.failure(error))
+                return
+            }
+            guard let main = mainUsageData else {
+                completion(.failure(UsageError.decodingError))
+                return
+            }
+            completion(.success(UsageData(
+                fiveHour: main.fiveHour,
+                sevenDay: main.sevenDay,
+                weeklyModels: main.weeklyModels,
+                extraUsage: extraUsageData
+            )))
+        }
+    }
+
+    /// "全部账户"模式：用指定账户的 refresh_token 独立换取 access_token 并拉取 usage。
+    /// 不走单账户共享的 oauthTokenCache / currentTask，避免多账户并发相互干扰；
+    /// 若响应轮换了 refresh_token，则静默写回该账户（而非"当前账户"）。
+    private func fetchOAuthUsage(for account: Account, completion: @escaping (Result<UsageData, Error>) -> Void) {
+        let refreshToken = account.sessionKey
+        ClaudeOAuthService.refresh(refreshToken: refreshToken) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .failure(let error):
+                DispatchQueue.main.async { completion(.failure(error)) }
+            case .success(let tokens):
+                // refresh_token 轮换：用发起刷新时的旧值反查账号写回（与单账户路径一致）
+                if !tokens.refreshToken.isEmpty, tokens.refreshToken != refreshToken {
+                    DispatchQueue.main.async {
+                        UserSettings.shared.silentlyUpdateClaudeSessionToken(tokens.refreshToken, replacing: refreshToken)
+                    }
+                }
+                // retryOnUnauthorized: false —— 401 只清共享缓存并返回错误，不触发"当前账户"重试路径
+                self.fetchClaudeOAuthUsageData(accessToken: tokens.accessToken, retryOnUnauthorized: false, completion: completion)
+            }
+        }
+    }
+
     /// 获取主 Usage API 数据（内部方法）
     /// - Parameter completion: 完成回调
-    private func fetchMainUsage(completion: @escaping (Result<UsageData, Error>) -> Void) {
+    private func fetchMainUsage(organizationId: String? = nil, sessionKey: String? = nil, completion: @escaping (Result<UsageData, Error>) -> Void) {
         // Service 层统一约定：所有 completion 一律在主线程回调，调用方无需再包一层 DispatchQueue.main.async
         let complete: (Result<UsageData, Error>) -> Void = { result in
             DispatchQueue.main.async { completion(result) }
         }
 
-        let urlString = "\(baseURL)/\(settings.organizationId)/usage"
+        let org = organizationId ?? settings.organizationId
+        let key = sessionKey ?? settings.sessionKey
+        let urlString = "\(baseURL)/\(org)/usage"
 
         guard let url = URL(string: urlString) else {
             complete(.failure(UsageError.invalidURL))
@@ -181,12 +284,12 @@ class ClaudeAPIService {
         // 使用统一的 Header 构建器添加完整的浏览器 Headers 以绕过 Cloudflare
         ClaudeAPIHeaderBuilder.applyHeaders(
             to: &request,
-            organizationId: settings.organizationId,
-            sessionKey: settings.sessionKey
+            organizationId: org,
+            sessionKey: key
         )
 
-        // 创建并保存任务引用
-        currentTask = session.dataTask(with: request) { data, response, error in
+        // 创建网络任务（per-account 并发路径使用独立 task，避免共享 currentTask 被相互取消）
+        let task = session.dataTask(with: request) { data, response, error in
             if let error = error {
                 AppLog.error(.api, "Usage request failed with a network error: \(error.localizedDescription)")
                 complete(.failure(UsageError.networkError))
@@ -267,8 +370,12 @@ class ClaudeAPIService {
             }
         }
 
-        // 启动任务
-        currentTask?.resume()
+        // 仅旧版单账户路径（未显式传入 organizationId）跟踪 currentTask 以支持取消；
+        // "全部账户"并发路径保持任务独立，互不取消
+        if organizationId == nil {
+            currentTask = task
+        }
+        task.resume()
     }
 
     /// 获取用户的组织列表
@@ -367,19 +474,22 @@ class ClaudeAPIService {
     /// 获取 Extra Usage 额外用量数据
     /// - Parameter completion: 完成回调，包含成功的 ExtraUsageData 或失败的 Error
     /// - Note: 此方法是可选的，即使失败也不应影响主要功能
-    func fetchExtraUsage(completion: @escaping (Result<ExtraUsageData?, Error>) -> Void) {
+    func fetchExtraUsage(organizationId: String? = nil, sessionKey: String? = nil, completion: @escaping (Result<ExtraUsageData?, Error>) -> Void) {
         // Service 层统一约定：所有 completion 一律在主线程回调，调用方无需再包一层 DispatchQueue.main.async
         let complete: (Result<ExtraUsageData?, Error>) -> Void = { result in
             DispatchQueue.main.async { completion(result) }
         }
 
+        let org = organizationId ?? settings.organizationId
+        let key = sessionKey ?? settings.sessionKey
+
         // 检查认证信息
-        guard settings.hasValidCredentials else {
+        guard !org.isEmpty, !key.isEmpty else {
             complete(.failure(UsageError.noCredentials))
             return
         }
 
-        let urlString = "\(baseURL)/\(settings.organizationId)/overage_spend_limit"
+        let urlString = "\(baseURL)/\(org)/overage_spend_limit"
 
         guard let url = URL(string: urlString) else {
             complete(.failure(UsageError.invalidURL))
@@ -393,8 +503,8 @@ class ClaudeAPIService {
         // 使用统一的 Header 构建器添加完整的浏览器 Headers
         ClaudeAPIHeaderBuilder.applyHeaders(
             to: &request,
-            organizationId: settings.organizationId,
-            sessionKey: settings.sessionKey
+            organizationId: org,
+            sessionKey: key
         )
 
         let task = session.dataTask(with: request) { data, response, error in
@@ -640,6 +750,13 @@ class ClaudeAPIService {
     func fetchUsageResult() async -> Result<UsageData, Error> {
         await withCheckedContinuation { continuation in
             fetchUsage { continuation.resume(returning: $0) }
+        }
+    }
+
+    /// `fetchUsage(for:completion:)` 的 async 包装，供"全部账户"并发路径使用。
+    func fetchUsageResult(for account: Account) async -> Result<UsageData, Error> {
+        await withCheckedContinuation { continuation in
+            fetchUsage(for: account) { continuation.resume(returning: $0) }
         }
     }
 

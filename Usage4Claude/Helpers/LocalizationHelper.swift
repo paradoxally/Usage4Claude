@@ -109,6 +109,10 @@ enum L {
         static var codexAnnouncementSection: String { localized("settings.general.codex_announcement_section") }
         static var codexAnnouncementEnable: String { localized("settings.general.codex_announcement_enable") }
         static var codexAnnouncementHint: String { localized("settings.general.codex_announcement_hint") }
+        static var allAccountsSection: String { localized("settings.general.all_accounts_section") }
+        static var allAccountsHint: String { localized("settings.general.all_accounts_hint") }
+        static var showAllAccounts: String { localized("settings.general.show_all_accounts") }
+        static var allAccountsDescription: String { localized("settings.general.all_accounts_description") }
     }
 
     // MARK: - Codex Reset Announcement (Beta)
@@ -122,7 +126,7 @@ enum L {
             String(format: localized("codex_announcement.tooltip_countdown_deadline"), duration)
         }
     }
-    
+
     // MARK: - Settings Authentication
     enum SettingsAuth {
         static var howToTitle: String { localized("settings.auth.how_to_title") }
