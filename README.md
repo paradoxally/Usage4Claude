@@ -25,6 +25,8 @@
 
 ---
 
+> **🍴 Fork note:** This fork adds a **"Show all accounts in menu bar"** option. Instead of viewing one Claude account at a time and switching between them, you can display **every Claude account at once** — one 5‑hour ring per account in the menu bar, and one column per account in the detail popover. It's enabled by default in **Display settings** and activates when you have 2 or more Claude accounts.
+
 ## ✨ Features
 
 ### What It Tracks

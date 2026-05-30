@@ -33,6 +33,10 @@ class DataRefreshManager: ObservableObject {
     @Published var usageData: UsageData?
     /// Codex 用量数据（nil 表示无 Codex 账号或拉取失败）
     @Published var codexUsageData: CodexUsageData?
+    /// "全部账户"模式下各 Claude 账户的用量数据（key 为 Account.id）
+    @Published var accountUsages: [UUID: UsageData] = [:]
+    /// "全部账户"模式下各 Claude 账户的错误信息（key 为 Account.id）
+    @Published var accountErrors: [UUID: String] = [:]
     /// 加载状态
     @Published var isLoading = false
     /// 错误消息
@@ -159,6 +163,8 @@ class DataRefreshManager: ObservableObject {
         let now = Date()
         let fetchClaude = claudeEnabled && (bypassBackoff || isBackoffElapsed(for: .claude, now: now))
         let fetchCodex = codexEnabled && (bypassBackoff || isBackoffElapsed(for: .codex, now: now))
+        // "全部账户"模式：启用开关且存在 2 个以上 Claude 账户
+        let multiAccount = fetchClaude && settings.isMultiAccountClaudeActive
 
         // 两个 Provider 都在退避期内：整次自动刷新跳过，保留缓存数据和错误提示
         guard fetchClaude || fetchCodex else { return }
@@ -177,14 +183,25 @@ class DataRefreshManager: ObservableObject {
 
         // Claude 与 Codex 并发拉取：两个子任务立即启动，结果在 MainActor 上顺序 await 合并
         // （审计报告 4.2：替代 DispatchGroup + 跨线程共享可变结果变量的旧写法）
+        // "全部账户"模式：为每个 Claude 账户各起一个独立子任务并发拉取（互不取消）
+        let accountTasks: [(id: UUID, task: Task<Result<UsageData, Error>, Never>)] = multiAccount
+            ? settings.accounts.map { account in
+                (account.id, Task { await self.apiService.fetchUsageResult(for: account) })
+            }
+            : []
         let claudeTask: Task<Result<UsageData, Error>, Never>? =
-            fetchClaude ? Task { await self.apiService.fetchUsageResult() } : nil
+            (fetchClaude && !multiAccount) ? Task { await self.apiService.fetchUsageResult() } : nil
         let codexTask: Task<Result<CodexUsageData, Error>, Never>? =
             fetchCodex ? Task { await self.codexApiService.fetchUsageResult() } : nil
 
         Task { @MainActor [weak self] in
             let claudeResult = await claudeTask?.value
             let codexResult = await codexTask?.value
+            // "全部账户"模式：顺序 await 各账户子任务结果，按 Account.id 收集
+            var accountResults: [UUID: Result<UsageData, Error>] = [:]
+            for entry in accountTasks {
+                accountResults[entry.id] = await entry.task.value
+            }
 
             guard let self = self else { return }
             self.isLoading = false
@@ -217,34 +234,44 @@ class DataRefreshManager: ObservableObject {
 
             // 处理 Claude 结果
             if fetchClaude {
-                switch claudeResult {
-                case .success(let data):
-                    let previousData = self.usageData
-                    self.usageData = data
-                    self.errorMessage = nil
-                    self.errorRequiresAuthAction = false
-                    self.recordFetchSuccess(for: .claude)
-                    monitoringUtilizations[.claude] = data.percentage
-
-                    NotificationManager.shared.checkAndNotify(usageData: data, previousData: previousData)
-
-                    let newResetsAt = data.resetsAt
-                    let hasResetChanged = hasResetTimeChanged(from: self.lastResetsAt, to: newResetsAt)
-                    if hasResetChanged {
-                        self.cancelResetVerification()
-                    } else if let resetsAt = newResetsAt {
-                        self.scheduleResetVerification(resetsAt: resetsAt)
+                if multiAccount {
+                    // 全部账户模式：填充 accountUsages/accountErrors，并镜像当前账户到 usageData
+                    if let util = self.processAccountResults(accountResults) {
+                        monitoringUtilizations[.claude] = util
                     }
-                    self.lastResetsAt = newResetsAt
+                } else {
+                    // 单账户模式：清空多账户缓存，避免开关关闭后残留
+                    self.accountUsages = [:]
+                    self.accountErrors = [:]
+                    switch claudeResult {
+                    case .success(let data):
+                        let previousData = self.usageData
+                        self.usageData = data
+                        self.errorMessage = nil
+                        self.errorRequiresAuthAction = false
+                        self.recordFetchSuccess(for: .claude)
+                        monitoringUtilizations[.claude] = data.percentage
 
-                case .failure(let error):
-                    self.errorMessage = error.localizedDescription
-                    self.errorRequiresAuthAction = self.requiresAuthAction(error)
-                    self.recordFetchFailure(error, for: .claude)
-                    AppLog.error(.refresh, "Claude refresh failed: \(error.localizedDescription)")
+                        NotificationManager.shared.checkAndNotify(usageData: data, previousData: previousData)
 
-                case .none:
-                    break
+                        let newResetsAt = data.resetsAt
+                        let hasResetChanged = hasResetTimeChanged(from: self.lastResetsAt, to: newResetsAt)
+                        if hasResetChanged {
+                            self.cancelResetVerification()
+                        } else if let resetsAt = newResetsAt {
+                            self.scheduleResetVerification(resetsAt: resetsAt)
+                        }
+                        self.lastResetsAt = newResetsAt
+
+                    case .failure(let error):
+                        self.errorMessage = error.localizedDescription
+                        self.errorRequiresAuthAction = self.requiresAuthAction(error)
+                        self.recordFetchFailure(error, for: .claude)
+                        AppLog.error(.refresh, "Claude refresh failed: \(error.localizedDescription)")
+
+                    case .none:
+                        break
+                    }
                 }
             }
 
@@ -255,6 +282,8 @@ class DataRefreshManager: ObservableObject {
     private func clearClaudeUsageState() {
         usageData = nil
         refreshState.lastSuccessAt[.claude] = nil
+        accountUsages = [:]
+        accountErrors = [:]
         lastResetsAt = nil
         cancelResetVerification()
     }
@@ -267,6 +296,50 @@ class DataRefreshManager: ObservableObject {
         default:
             return false
         }
+    }
+
+    /// 处理"全部账户"并发结果：填充 accountUsages / accountErrors，
+    /// 并把当前账户镜像到 usageData，以保持旧绑定、通知与 Codex 协同逻辑不变。
+    /// - Returns: 当前账户的利用率（用于智能监控刷新），无数据时为 nil
+    private func processAccountResults(_ results: [UUID: Result<UsageData, Error>]) -> Double? {
+        var usages: [UUID: UsageData] = [:]
+        var errors: [UUID: Error] = [:]
+        for account in settings.accounts {
+            switch results[account.id] {
+            case .success(let data):
+                usages[account.id] = data
+            case .failure(let error):
+                errors[account.id] = error
+            case .none:
+                break
+            }
+        }
+        accountUsages = usages
+        accountErrors = errors.mapValues { $0.localizedDescription }
+
+        guard let current = settings.currentAccount else { return nil }
+        if let data = usages[current.id] {
+            let previousData = usageData
+            usageData = data
+            errorMessage = nil
+            errorRequiresAuthAction = false
+            recordFetchSuccess(for: .claude)
+            NotificationManager.shared.checkAndNotify(usageData: data, previousData: previousData)
+            let newResetsAt = data.resetsAt
+            if hasResetTimeChanged(from: lastResetsAt, to: newResetsAt) {
+                cancelResetVerification()
+            } else if let resetsAt = newResetsAt {
+                scheduleResetVerification(resetsAt: resetsAt)
+            }
+            lastResetsAt = newResetsAt
+            return data.percentage
+        } else if let error = errors[current.id] {
+            errorMessage = error.localizedDescription
+            errorRequiresAuthAction = requiresAuthAction(error)
+            recordFetchFailure(error, for: .claude)
+            AppLog.error(.refresh, "Claude refresh failed for the current account: \(error.localizedDescription)")
+        }
+        return nil
     }
 
     private func clearCodexUsageState(clearError: Bool = true) {

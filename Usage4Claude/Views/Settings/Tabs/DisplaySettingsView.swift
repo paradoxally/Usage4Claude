@@ -17,6 +17,35 @@ struct DisplaySettingsView: View {
         DocsScrollView {
             VStack(spacing: 16) {
                 MenuBarAppearanceSection()
+
+                SettingCard(
+                    icon: "person.2.fill",
+                    iconColor: .cyan,
+                    title: L.SettingsGeneral.allAccountsSection,
+                    hint: L.SettingsGeneral.allAccountsHint
+                ) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Toggle("", isOn: $settings.showAllAccountsInMenuBar)
+                                .toggleStyle(.switch)
+                                .controlSize(.mini)
+                                .focusable(false)
+                                .labelsHidden()
+                            Text(L.SettingsGeneral.showAllAccounts)
+                            Spacer()
+                        }
+                        HStack(alignment: .top, spacing: 4) {
+                            Image(systemName: "info.circle.fill")
+                                .font(.caption2)
+                                .foregroundColor(.blue)
+                            Text(L.SettingsGeneral.allAccountsDescription)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+
                 LimitSelectionSection()
 
                 // 图表样式卡片
