@@ -18,7 +18,17 @@ struct UsageDetailView: View {
     @ObservedObject var refreshState: RefreshState
     /// 菜单操作回调
     var onMenuAction: ((MenuAction) -> Void)? = nil
+    /// "全部账户"模式下各账户列数据（nil 表示非该模式）
+    var accountColumns: [AccountColumn]? = nil
     @StateObject private var localization = LocalizationManager.shared
+
+    /// "全部账户"模式下单个账户列的数据
+    struct AccountColumn: Identifiable {
+        let id: UUID
+        let alias: String
+        let data: UsageData?
+        let error: String?
+    }
     /// 是否有可用更新（用于显示文字和徽章）
     @Binding var hasAvailableUpdate: Bool
     /// 是否应显示更新徽章（用户未确认时才显示徽章）
@@ -80,6 +90,11 @@ struct UsageDetailView: View {
     private var isMultiProviderActive: Bool {
         UserSettings.shared.isMultiProviderActive
             && (codexUsageData != nil || codexErrorMessage != nil || UserSettings.shared.hasValidCodexCredentials)
+    }
+
+    /// "全部账户"模式：用户启用开关且存在 2 个以上 Claude 账户（由父视图传入列数据）
+    private var isMultiAccountActive: Bool {
+        UserSettings.shared.isMultiAccountClaudeActive && (accountColumns?.isEmpty == false)
     }
 
     private var isCodexOnlyActive: Bool {
@@ -173,11 +188,43 @@ struct UsageDetailView: View {
         max(35, multiProviderHeight - 28)
     }
 
+    /// 单列固定宽度（与单 Provider Claude 列一致）
+    private let accountColumnWidth: CGFloat = 290
+
+    /// "全部账户"模式高度：取各账户列中最大行数
+    private var multiAccountHeight: CGFloat {
+        let rowHeight: CGFloat = 26
+        let spacing: CGFloat = 5
+        let columns = accountColumns ?? []
+        let maxRows = columns.map { column -> Int in
+            guard let data = column.data else { return 2 }
+            let types = UserSettings.shared.getActiveDisplayTypes(usageData: data)
+                .filter { $0.provider == .claude }
+            return types.count == 1 ? 2 : max(types.count, 1)
+        }.max() ?? 2
+        let rowsHeight = CGFloat(maxRows) * rowHeight + CGFloat(max(0, maxRows - 1)) * spacing
+        return 190 + rowsHeight
+    }
+
+    /// "全部账户"模式宽度：N 列 + (N-1) 条 1pt 分隔线
+    private var multiAccountWidth: CGFloat {
+        let count = accountColumns?.count ?? 0
+        return CGFloat(count) * accountColumnWidth + CGFloat(max(0, count - 1)) * 1
+    }
+
+    private var multiAccountDividerHeight: CGFloat {
+        max(35, multiAccountHeight - 28)
+    }
+
     private var contentWidth: CGFloat {
-        isMultiProviderActive ? 580 : 290
+        if isMultiAccountActive { return multiAccountWidth }
+        return isMultiProviderActive ? 580 : 290
     }
 
     private var contentHeight: CGFloat {
+        if isMultiAccountActive {
+            return multiAccountHeight
+        }
         if isMultiProviderActive {
             return multiProviderHeight
         }
@@ -703,6 +750,70 @@ struct UsageDetailView: View {
         }
     }
 
+    // MARK: - All-Accounts Body
+
+    /// "全部账户"模式下单列头部：Claude 图标 + 账户别名（首列附带刷新/菜单控件）
+    @ViewBuilder
+    private func accountColumnHeader(alias: String, showsControls: Bool) -> some View {
+        let headerIconSize: CGFloat = 18
+        let headerRowHeight: CGFloat = 20
+        HStack {
+            if let icon = ImageHelper.createAppIcon(size: headerIconSize) {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: headerIconSize, height: headerIconSize)
+            } else {
+                Image(systemName: "chart.pie.fill")
+                    .foregroundColor(.blue)
+            }
+            Text(alias)
+                .font(.headline)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer()
+            if showsControls {
+                refreshAndMenuButtons
+            }
+        }
+        .frame(height: headerRowHeight, alignment: .center)
+        .padding(.horizontal)
+        .padding(.top)
+    }
+
+    /// "全部账户"模式主体：每个 Claude 账户一列，列间以竖向分隔线分隔
+    private func multiAccountBody(columns: [AccountColumn]) -> some View {
+        VStack(spacing: contentSpacing) {
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(Array(columns.enumerated()), id: \.element.id) { index, column in
+                    if index > 0 {
+                        ProviderDivider(height: multiAccountDividerHeight)
+                    }
+                    VStack(spacing: contentSpacing) {
+                        accountColumnHeader(alias: column.alias, showsControls: index == 0)
+                        ClaudeColumnView(
+                            usageData: column.data,
+                            errorMessage: column.error,
+                            showRemainingMode: $showRemainingMode,
+                            refreshState: refreshState,
+                            animationType: $claudeAnimationType,
+                            rotationAngle: $rotationAngle,
+                            remainingModeAnimationTrigger: remainingModeAnimationTrigger,
+                            onRefresh: { onMenuAction?(.refresh) },
+                            onAnimationHint: { showAnimationHint($0, provider: .claude) },
+                            onToggleRemainingMode: toggleRemainingMode,
+                            onOpenAuthSettings: { onMenuAction?(.authSettings) }
+                        )
+                    }
+                    .frame(width: accountColumnWidth, alignment: .top)
+                }
+            }
+
+            animationHintView(for: .claude)
+            updateNotificationView
+            Spacer()
+        }
+    }
+
     private func isAnimationHintVisible(for provider: ProviderType) -> Bool {
         showAnimationTypeHint && animationTypeHintProvider == provider
     }
@@ -733,7 +844,9 @@ struct UsageDetailView: View {
 
     var body: some View {
         Group {
-            if isMultiProviderActive {
+            if isMultiAccountActive, let columns = accountColumns {
+                multiAccountBody(columns: columns)
+            } else if isMultiProviderActive {
                 multiProviderBody(codex: codexUsageData)
             } else if isCodexOnlyActive {
                 codexOnlyBody(codex: codexUsageData)
@@ -742,6 +855,7 @@ struct UsageDetailView: View {
             }
         }
         .frame(width: contentWidth, height: contentHeight)
+        .animation(.easeInOut(duration: 0.25), value: isMultiAccountActive)
         .animation(.easeInOut(duration: 0.25), value: isMultiProviderActive)
         .animation(.easeInOut(duration: 0.25), value: isCodexOnlyActive)
         .animation(.easeInOut(duration: 0.25), value: showAnimationTypeHint)

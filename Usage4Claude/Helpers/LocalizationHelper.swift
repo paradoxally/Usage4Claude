@@ -104,8 +104,12 @@ enum L {
         static var interfaceLanguage: String { localized("settings.general.interface_language") }
         static var languageHint: String { localized("settings.general.language_hint") }
         static var resetButton: String { localized("settings.general.reset_button") }
+        static var allAccountsSection: String { localized("settings.general.all_accounts_section") }
+        static var allAccountsHint: String { localized("settings.general.all_accounts_hint") }
+        static var showAllAccounts: String { localized("settings.general.show_all_accounts") }
+        static var allAccountsDescription: String { localized("settings.general.all_accounts_description") }
     }
-    
+
     // MARK: - Settings Authentication
     enum SettingsAuth {
         static var howToTitle: String { localized("settings.auth.how_to_title") }

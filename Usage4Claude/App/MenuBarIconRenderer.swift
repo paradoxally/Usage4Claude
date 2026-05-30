@@ -108,6 +108,69 @@ class MenuBarIconRenderer {
         return icon
     }
 
+    // MARK: - All-Accounts Icon Creation
+
+    /// "全部账户"模式图标：每个 Claude 账户一个 5 小时圆环（仅 5 小时），账户之间用细分隔线分隔。
+    /// 若存在 Codex 数据，则在末尾追加 Codex 图标，确保 Codex 用户不丢失菜单栏读数。
+    /// - Parameters:
+    ///   - accounts: 有序的 (账户, 用量) 列表；用量为 nil 表示该账户尚在加载，绘制占位空环
+    ///   - codexUsageData: 可选 Codex 用量数据
+    ///   - hasUpdate: 是否显示更新徽章
+    ///   - button: 状态栏按钮（用于自适应配色）
+    func createAllAccountsIcon(
+        accounts: [(account: Account, data: UsageData?)],
+        codexUsageData: CodexUsageData? = nil,
+        hasUpdate: Bool,
+        button: NSStatusBarButton?
+    ) -> NSImage {
+        // 单色判定：与 createIcon 一致，但以首个有数据的账户作为配色参考
+        let referenceData = accounts.compactMap { $0.data }.first
+        let isMonochrome: Bool
+        if let data = referenceData {
+            let canUseColor = settings.canUseColoredTheme(usageData: data)
+            let forceMonochrome = !canUseColor && settings.iconStyleMode != .monochrome
+            isMonochrome = settings.iconStyleMode == .monochrome || forceMonochrome
+        } else {
+            isMonochrome = settings.iconStyleMode == .monochrome
+        }
+
+        var icons: [NSImage] = []
+        for (index, entry) in accounts.enumerated() {
+            if index > 0 {
+                icons.append(createMenuBarDividerIcon(isMonochrome: isMonochrome))
+            }
+            icons.append(fiveHourCircle(for: entry.data, isMonochrome: isMonochrome, button: button))
+        }
+
+        // 追加 Codex（若有）：复用现有 Codex 图标构建逻辑
+        if let codex = codexUsageData {
+            let codexTypes = settings.getActiveDisplayTypes(usageData: nil, codexUsageData: codex)
+                .filter { $0.provider == .codex }
+            let codexIcons = buildCodexIcons(codex: codex, types: codexTypes, isMonochrome: isMonochrome, button: button)
+            if !codexIcons.isEmpty {
+                icons.append(createMenuBarDividerIcon(isMonochrome: isMonochrome))
+                icons.append(contentsOf: codexIcons)
+            }
+        }
+
+        var combined = icons.isEmpty ? createSimpleCircleIcon() : combineIcons(icons, spacing: 3.0, height: metricIconSize)
+        combined.isTemplate = isMonochrome
+        if hasUpdate { combined = addBadgeToImage(combined) }
+        return combined
+    }
+
+    /// 为单个账户构建 5 小时圆环；无数据或无 5 小时限制时绘制占位空环（0%）
+    private func fiveHourCircle(for data: UsageData?, isMonochrome: Bool, button: NSStatusBarButton?) -> NSImage {
+        if let data = data,
+           let icon = createIconForType(.fiveHour, data: data, isMonochrome: isMonochrome, button: button) {
+            return icon
+        }
+        let size = NSSize(width: 18, height: 18)
+        return isMonochrome
+            ? createCircleTemplateImage(percentage: 0, size: size, button: button, removeBackground: true)
+            : createCircleImage(percentage: 0, size: size, button: button, removeBackground: true)
+    }
+
     // MARK: - Multi-Provider Icon Creation
 
     /// 双 Provider 模式图标：[Claude 品牌] + [Claude 指标] + [Codex 品牌] + [Codex 指标]

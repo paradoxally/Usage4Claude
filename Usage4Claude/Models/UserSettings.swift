@@ -463,6 +463,12 @@ class UserSettings: ObservableObject {
         return !accounts.isEmpty && !codexAccounts.isEmpty
     }
 
+    /// 是否进入"全部账户"形态：用户启用了开关且存在 2 个以上 Claude 账户
+    /// 为 true 时菜单栏每个账户显示一个 5 小时圆环，弹窗按账户分列显示
+    var isMultiAccountClaudeActive: Bool {
+        showAllAccountsInMenuBar && accounts.count >= 2
+    }
+
     /// Codex 认证信息是否已配置
     var hasValidCodexCredentials: Bool {
         !codexSessionToken.isEmpty
@@ -563,6 +569,14 @@ class UserSettings: ObservableObject {
     @Published var notificationsEnabled: Bool {
         didSet {
             defaults.set(notificationsEnabled, forKey: "notificationsEnabled")
+        }
+    }
+
+    /// 是否在菜单栏中同时显示所有 Claude 账户（每个账户一个 5 小时圆环）
+    @Published var showAllAccountsInMenuBar: Bool {
+        didSet {
+            defaults.set(showAllAccountsInMenuBar, forKey: "showAllAccountsInMenuBar")
+            NotificationCenter.default.post(name: .settingsChanged, object: nil)
         }
     }
 
@@ -947,6 +961,9 @@ class UserSettings: ObservableObject {
         // 加载通知设置，默认开启
         self.notificationsEnabled = defaults.object(forKey: "notificationsEnabled") as? Bool ?? true
 
+        // 加载菜单栏多账户显示设置，默认开启
+        self.showAllAccountsInMenuBar = defaults.object(forKey: "showAllAccountsInMenuBar") as? Bool ?? true
+
         // 初始化开机启动设置
         self.launchAtLogin = defaults.bool(forKey: "launchAtLogin")
 
@@ -1070,6 +1087,7 @@ class UserSettings: ObservableObject {
         displayMode = .smart
         customDisplayTypes = [.fiveHour, .sevenDay, .extraUsage]
         notificationsEnabled = true
+        showAllAccountsInMenuBar = true
 
         // 重置智能模式状态
         lastUtilization = nil

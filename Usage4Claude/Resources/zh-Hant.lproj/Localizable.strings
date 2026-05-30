@@ -64,6 +64,10 @@
 "settings.general.interface_language" = "介面語言";
 "settings.general.language_hint" = "變更介面顯示語言";
 "settings.general.reset_button" = "恢復預設設定";
+"settings.general.all_accounts_section" = "多帳戶";
+"settings.general.all_accounts_hint" = "同時顯示所有 Claude 帳戶";
+"settings.general.show_all_accounts" = "在選單列中顯示所有帳戶";
+"settings.general.all_accounts_description" = "每個 Claude 帳戶在選單列中顯示獨立的 5 小時圓環，點擊後按帳戶分列展開。需至少兩個帳戶。";
 "icon_style.color_translucent" = "彩色通透";
 "icon_style.color_with_background" = "彩色背景";
 "icon_style.monochrome" = "單色主題";

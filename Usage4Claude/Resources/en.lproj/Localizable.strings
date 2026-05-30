@@ -64,6 +64,10 @@
 "settings.general.interface_language" = "Interface Language";
 "settings.general.language_hint" = "Change the interface display language";
 "settings.general.reset_button" = "Reset to Defaults";
+"settings.general.all_accounts_section" = "Multiple Accounts";
+"settings.general.all_accounts_hint" = "Display every Claude account at once";
+"settings.general.show_all_accounts" = "Show all accounts in menu bar";
+"settings.general.all_accounts_description" = "Each Claude account shows its own 5-hour ring in the menu bar. Click to open a column for each account. Requires at least two accounts.";
 "icon_style.color_translucent" = "Color Translucent";
 "icon_style.color_with_background" = "Color with Background";
 "icon_style.monochrome" = "Monochrome";

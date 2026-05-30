@@ -34,6 +34,10 @@ class DataRefreshManager: ObservableObject {
     @Published var usageData: UsageData?
     /// Codex 用量数据（nil 表示无 Codex 账号或拉取失败）
     @Published var codexUsageData: CodexUsageData?
+    /// "全部账户"模式下各 Claude 账户的用量数据（key 为 Account.id）
+    @Published var accountUsages: [UUID: UsageData] = [:]
+    /// "全部账户"模式下各 Claude 账户的错误信息（key 为 Account.id）
+    @Published var accountErrors: [UUID: String] = [:]
     /// 加载状态
     @Published var isLoading = false
     /// 错误消息
@@ -145,6 +149,8 @@ class DataRefreshManager: ObservableObject {
 
         let fetchClaude = shouldFetchClaudeUsage
         let fetchCodex = shouldFetchCodexUsage
+        // "全部账户"模式：启用开关且存在 2 个以上 Claude 账户
+        let multiAccount = fetchClaude && settings.isMultiAccountClaudeActive
 
         if !fetchClaude {
             clearClaudeUsageState()
@@ -163,13 +169,26 @@ class DataRefreshManager: ObservableObject {
         let group = DispatchGroup()
         var claudeResult: Result<UsageData, Error>?
         var codexResult: Result<CodexUsageData, Error>?
+        // "全部账户"模式下，按 Account.id 收集每个账户的结果（completion 均在主线程回调，无需额外同步）
+        var accountResults: [UUID: Result<UsageData, Error>] = [:]
 
         // Claude 请求
         if fetchClaude {
-            group.enter()
-            apiService.fetchUsage { result in
-                claudeResult = result
-                group.leave()
+            if multiAccount {
+                // 对每个账户并发拉取（各自独立任务，互不取消）
+                for account in settings.accounts {
+                    group.enter()
+                    apiService.fetchUsage(for: account) { result in
+                        accountResults[account.id] = result
+                        group.leave()
+                    }
+                }
+            } else {
+                group.enter()
+                apiService.fetchUsage { result in
+                    claudeResult = result
+                    group.leave()
+                }
             }
         }
 
@@ -216,33 +235,46 @@ class DataRefreshManager: ObservableObject {
 
             // 处理 Claude 结果
             if fetchClaude {
-                switch claudeResult {
-                case .success(let data):
-                    let previousData = self.usageData
-                    self.usageData = data
-                    self.errorMessage = nil
-                    monitoringUtilizations[.claude] = data.percentage
-
-                    if self.settings.notificationsEnabled {
-                        NotificationManager.shared.checkAndNotify(usageData: data, previousData: previousData)
+                if multiAccount {
+                    // 全部账户模式：填充 accountUsages/accountErrors，并镜像当前账户到 usageData
+                    if let util = self.processAccountResults(accountResults) {
+                        monitoringUtilizations[.claude] = util
                     }
+                } else {
+                    // 单账户模式：清空多账户缓存，避免开关关闭后残留
+                    self.accountUsages = [:]
+                    self.accountErrors = [:]
+                    switch claudeResult {
+                    case .success(let data):
+                        let previousData = self.usageData
+                        self.usageData = data
+                        self.errorMessage = nil
+                        monitoringUtilizations[.claude] = data.percentage
 
-                    let newResetsAt = data.resetsAt
-                    let hasResetChanged = self.hasResetTimeChanged(from: self.lastResetsAt, to: newResetsAt)
-                    if hasResetChanged {
-                        self.cancelResetVerification()
-                    } else if let resetsAt = newResetsAt {
-                        self.scheduleResetVerification(resetsAt: resetsAt)
+                        if self.settings.notificationsEnabled {
+                            NotificationManager.shared.checkAndNotify(usageData: data, previousData: previousData)
+                        }
+
+                        let newResetsAt = data.resetsAt
+                        let hasResetChanged = self.hasResetTimeChanged(from: self.lastResetsAt, to: newResetsAt)
+                        if hasResetChanged {
+                            self.cancelResetVerification()
+                        } else if let resetsAt = newResetsAt {
+                            self.scheduleResetVerification(resetsAt: resetsAt)
+                        }
+                        self.lastResetsAt = newResetsAt
+
+                    case .failure(let error):
+                        self.errorMessage = error.localizedDescription
+                        Logger.menuBar.error("Claude API 请求失败: \(error.localizedDescription)")
+
+                    case .none:
+                        break
                     }
-                    self.lastResetsAt = newResetsAt
-
-                case .failure(let error):
-                    self.errorMessage = error.localizedDescription
-                    Logger.menuBar.error("Claude API 请求失败: \(error.localizedDescription)")
-
-                case .none:
-                    break
                 }
+            } else {
+                self.accountUsages = [:]
+                self.accountErrors = [:]
             }
 
             self.settings.updateSmartMonitoringMode(providerUtilizations: monitoringUtilizations)
@@ -251,8 +283,52 @@ class DataRefreshManager: ObservableObject {
 
     private func clearClaudeUsageState() {
         usageData = nil
+        accountUsages = [:]
+        accountErrors = [:]
         lastResetsAt = nil
         cancelResetVerification()
+    }
+
+    /// 处理"全部账户"并发结果：填充 accountUsages / accountErrors，
+    /// 并把当前账户镜像到 usageData，以保持旧绑定、通知与 Codex 协同逻辑不变。
+    /// - Returns: 当前账户的利用率（用于智能监控刷新），无数据时为 nil
+    private func processAccountResults(_ results: [UUID: Result<UsageData, Error>]) -> Double? {
+        var usages: [UUID: UsageData] = [:]
+        var errors: [UUID: String] = [:]
+        for account in settings.accounts {
+            switch results[account.id] {
+            case .success(let data):
+                usages[account.id] = data
+            case .failure(let error):
+                errors[account.id] = error.localizedDescription
+            case .none:
+                break
+            }
+        }
+        accountUsages = usages
+        accountErrors = errors
+
+        guard let current = settings.currentAccount else { return nil }
+        if let data = usages[current.id] {
+            let previousData = usageData
+            usageData = data
+            errorMessage = nil
+            if settings.notificationsEnabled {
+                NotificationManager.shared.checkAndNotify(usageData: data, previousData: previousData)
+            }
+            let newResetsAt = data.resetsAt
+            if hasResetTimeChanged(from: lastResetsAt, to: newResetsAt) {
+                cancelResetVerification()
+            } else if let resetsAt = newResetsAt {
+                scheduleResetVerification(resetsAt: resetsAt)
+            }
+            lastResetsAt = newResetsAt
+            return data.percentage
+        } else if let errMsg = errors[current.id] {
+            errorMessage = errMsg
+            Logger.menuBar.error("当前账户用量请求失败: \(errMsg)")
+        }
+        return nil
     }
 
     private func clearCodexUsageState(clearError: Bool = true) {

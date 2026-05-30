@@ -109,6 +109,13 @@ class MenuBarManager: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // "全部账户"模式：各账户用量更新时重绘菜单栏图标
+        dataManager.$accountUsages
+            .sink { [weak self] _ in
+                self?.updateMenuBarIcon()
+            }
+            .store(in: &cancellables)
+
         dataManager.$isLoading
             .assign(to: &$isLoading)
 
@@ -127,6 +134,17 @@ class MenuBarManager: ObservableObject {
 
         dataManager.$latestVersion
             .assign(to: &$latestVersion)
+
+        // 监听"全部账户"开关变化：清缓存、立即重渲染，并拉取一次数据填充各账户圆环
+        settings.$showAllAccountsInMenuBar
+            .dropFirst()
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                self.ui.clearIconCache()
+                self.updateMenuBarIcon()
+                self.dataManager.fetchUsage()
+            }
+            .store(in: &cancellables)
     }
     
     /// 处理菜单栏图标点击事件
@@ -298,6 +316,18 @@ class MenuBarManager: ObservableObject {
 
         ui.setPopoverContentSize(usageDetailContentSize())
 
+        // "全部账户"模式：按账户顺序构建列数据（用量/错误来自 dataManager）
+        let accountColumns: [UsageDetailView.AccountColumn]? = settings.isMultiAccountClaudeActive
+            ? settings.accounts.map { account in
+                UsageDetailView.AccountColumn(
+                    id: account.id,
+                    alias: account.displayName,
+                    data: dataManager.accountUsages[account.id],
+                    error: dataManager.accountErrors[account.id]
+                )
+            }
+            : nil
+
         // 创建并设置内容视图
         ui.setPopoverContent(UsageDetailView(
             usageData: Binding(
@@ -320,6 +350,7 @@ class MenuBarManager: ObservableObject {
             onMenuAction: { [weak self] action in
                 self?.handleMenuAction(action)
             },
+            accountColumns: accountColumns,
             hasAvailableUpdate: Binding(
                 get: { self.hasAvailableUpdate },
                 set: { self.hasAvailableUpdate = $0 }
@@ -341,6 +372,20 @@ class MenuBarManager: ObservableObject {
         let baseHeight: CGFloat = 190
         let rowHeight: CGFloat = 26
         let spacing: CGFloat = 5
+
+        // "全部账户"模式：N 列，宽度 = N×290 + (N-1) 条分隔线，高度取各列最大行数
+        if settings.isMultiAccountClaudeActive {
+            let accounts = settings.accounts
+            let maxRows = accounts.map { account -> Int in
+                guard let data = dataManager.accountUsages[account.id] else { return 2 }
+                let types = settings.getActiveDisplayTypes(usageData: data)
+                    .filter { $0.provider == .claude }
+                return types.count == 1 ? 2 : max(types.count, 1)
+            }.max() ?? 2
+            let rowsHeight = CGFloat(maxRows) * rowHeight + CGFloat(max(0, maxRows - 1)) * spacing
+            let width = CGFloat(accounts.count) * 290 + CGFloat(max(0, accounts.count - 1)) * 1
+            return NSSize(width: width, height: baseHeight + rowsHeight)
+        }
 
         if settings.isMultiProviderActive && (codexUsageData != nil || codexErrorMessage != nil || settings.hasValidCodexCredentials) {
             let claudeRowCount: Int
@@ -584,7 +629,17 @@ class MenuBarManager: ObservableObject {
 
     /// 更新菜单栏图标
     private func updateMenuBarIcon() {
-        ui.updateMenuBarIcon(usageData: usageData, codexUsageData: codexUsageData, hasUpdate: hasAvailableUpdate, shouldShowBadge: shouldShowUpdateBadge)
+        if settings.isMultiAccountClaudeActive {
+            ui.updateMenuBarIconForAllAccounts(
+                orderedAccounts: settings.accounts,
+                usages: dataManager.accountUsages,
+                codexUsageData: codexUsageData,
+                hasUpdate: hasAvailableUpdate,
+                shouldShowBadge: shouldShowUpdateBadge
+            )
+        } else {
+            ui.updateMenuBarIcon(usageData: usageData, codexUsageData: codexUsageData, hasUpdate: hasAvailableUpdate, shouldShowBadge: shouldShowUpdateBadge)
+        }
     }
     
     // MARK: - Cleanup

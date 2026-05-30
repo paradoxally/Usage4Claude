@@ -23,6 +23,8 @@
 
 ---
 
+> **🍴 Fork note:** This fork adds a **"Show all accounts in menu bar"** option. Instead of viewing one Claude account at a time and switching between them, you can display **every Claude account at once** — one 5‑hour ring per account in the menu bar, and one column per account in the detail popover. It's enabled by default in **General settings** and activates when you have 2 or more Claude accounts.
+
 ## ✨ Features
 
 ### 🎯 Core Features
@@ -34,6 +36,7 @@
 - **🎨 Smart Colors** - Automatic color changes based on usage, each limit type has its own color scheme
 - **🔔 Usage Notifications** - Warning notification at 90% usage, reset notification when quota resets
 - **👥 Multi-Account Management** - Support multiple Claude accounts / multiple organizations per account, plus independent Codex account management and quick switching
+- **🪟 Show All Accounts At Once** *(fork addition)* - Display every Claude account simultaneously: one 5-hour ring per account in the menu bar, and a column per account in the detail popover. Toggle in General settings (on by default; activates with 2+ Claude accounts)
 - **🧩 Codex Support** - Optional Codex quota monitoring; use Codex alone or show it alongside Claude in a dual-column view (add a Codex account in settings to enable)
 - **🌐 Built-in Browser Login** - Claude login automatically extracts Session Key; Codex uses built-in browser login for ChatGPT authentication
 - **🎨 Appearance Settings** - Support system default / light / dark appearance modes
@@ -233,6 +236,7 @@ open Usage4Claude.xcodeproj
 - **View Details** - Click the menu bar icon to view details; when only Claude/Codex is configured, the detail window shows a Claude/Codex single column, and when both are configured it shows a dual-column view
 - **Manual Refresh** - Click refresh button in detail window or use shortcut ⌘R (data also auto-refreshes when opening the main window); in the dual-column view, Claude and Codex can also be refreshed separately
 - **Switch Account** - Click "…" menu in detail window or right-click menu bar icon to select a Claude / Codex account
+- **Show All Accounts** *(fork addition)* - With 2+ Claude accounts and the "Show all accounts in menu bar" setting enabled (General settings, on by default), the menu bar shows one 5-hour ring per account and the detail popover shows a column for each account — no switching needed
 - **Keyboard Shortcuts**
   - ⌘R - Manual refresh data
   - ⌘, - Open General Settings
@@ -399,6 +403,7 @@ A: macOS system or third-party software (like Bartender, Hidden Bar, etc.) may a
 A: Usage4Claude supports multiple Claude accounts, multiple organizations under the same Claude account, and independent Codex account management:
 - **Add Account** - Add via Claude browser login, Claude manual input, or Codex browser login in Settings → Authentication
 - **Switch Account** - Click "…" menu in detail window or right-click menu bar icon, select the Claude / Codex account to switch to
+- **Show All Accounts At Once** *(fork addition)* - Enable "Show all accounts in menu bar" (General settings) to display every Claude account simultaneously instead of switching — one 5-hour ring per account in the menu bar, one column per account in the popover (requires 2+ accounts)
 - **Edit Alias** - Set easily recognizable aliases for each account
 - **Delete Account** - Swipe left or use edit mode to remove unwanted accounts
 

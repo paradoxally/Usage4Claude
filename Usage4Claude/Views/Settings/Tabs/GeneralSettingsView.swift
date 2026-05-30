@@ -116,6 +116,35 @@ struct GeneralSettingsView: View {
                     }
                 }
 
+                // 多账户显示卡片
+                SettingCard(
+                    icon: "person.2.fill",
+                    iconColor: .cyan,
+                    title: L.SettingsGeneral.allAccountsSection,
+                    hint: L.SettingsGeneral.allAccountsHint
+                ) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Toggle("", isOn: $settings.showAllAccountsInMenuBar)
+                                .toggleStyle(.switch)
+                                .controlSize(.mini)
+                                .focusable(false)
+                                .labelsHidden()
+                            Text(L.SettingsGeneral.showAllAccounts)
+                            Spacer()
+                        }
+                        HStack(alignment: .top, spacing: 4) {
+                            Image(systemName: "info.circle.fill")
+                                .font(.caption2)
+                                .foregroundColor(.blue)
+                            Text(L.SettingsGeneral.allAccountsDescription)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+
                 // 显示选项卡片
                 SettingCard(
                     icon: "rectangle.3.group",

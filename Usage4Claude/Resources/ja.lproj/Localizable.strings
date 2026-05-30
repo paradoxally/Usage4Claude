@@ -64,6 +64,10 @@
 "settings.general.interface_language" = "インターフェース言語";
 "settings.general.language_hint" = "表示言語を変更";
 "settings.general.reset_button" = "デフォルトに戻す";
+"settings.general.all_accounts_section" = "複数アカウント";
+"settings.general.all_accounts_hint" = "すべての Claude アカウントを同時に表示";
+"settings.general.show_all_accounts" = "メニューバーにすべてのアカウントを表示";
+"settings.general.all_accounts_description" = "各 Claude アカウントの 5 時間リングをメニューバーに個別に表示します。クリックするとアカウントごとの列が開きます。2 つ以上のアカウントが必要です。";
 "icon_style.color_translucent" = "カラー透明";
 "icon_style.color_with_background" = "カラー背景付き";
 "icon_style.monochrome" = "モノクローム";

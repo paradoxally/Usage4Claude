@@ -64,6 +64,10 @@
 "settings.general.interface_language" = "界面语言";
 "settings.general.language_hint" = "更改界面显示语言";
 "settings.general.reset_button" = "恢复默认设置";
+"settings.general.all_accounts_section" = "多账户";
+"settings.general.all_accounts_hint" = "同时显示所有 Claude 账户";
+"settings.general.show_all_accounts" = "在菜单栏中显示所有账户";
+"settings.general.all_accounts_description" = "每个 Claude 账户在菜单栏中显示独立的 5 小时圆环，点击后按账户分列展开。需至少两个账户。";
 "icon_style.color_translucent" = "彩色通透";
 "icon_style.color_with_background" = "彩色背景";
 "icon_style.monochrome" = "单色主题";
