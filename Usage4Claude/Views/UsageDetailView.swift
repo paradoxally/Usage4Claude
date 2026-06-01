@@ -834,20 +834,11 @@ struct UsageDetailView: View {
 
     // MARK: - All-Accounts Body
 
-    /// "全部账户"模式下单列头部：Claude 图标 + 账户别名（首列附带刷新/菜单控件）
+    /// "全部账户"模式下单列头部：仅账户别名（首列附带刷新/菜单控件）
     @ViewBuilder
     private func accountColumnHeader(alias: String, showsControls: Bool) -> some View {
-        let headerIconSize: CGFloat = 18
         let headerRowHeight: CGFloat = 20
         HStack {
-            if let icon = ImageHelper.createAppIcon(size: headerIconSize) {
-                Image(nsImage: icon)
-                    .resizable()
-                    .frame(width: headerIconSize, height: headerIconSize)
-            } else {
-                Image(systemName: "chart.pie.fill")
-                    .foregroundColor(.blue)
-            }
             Text(alias)
                 .font(.headline)
                 .lineLimit(1)
