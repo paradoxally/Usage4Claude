@@ -82,6 +82,12 @@ class MenuBarManager: ObservableObject {
     @Published var latestVersion: String?
     /// 用户已确认的版本号（点击检查更新后记录）
     private var acknowledgedVersion: String?
+    /// popover 最近一次开始关闭的时刻
+    ///
+    /// AppKit 在鼠标按下时就会关掉 semitransient popover，而状态栏按钮的 action
+    /// 要到鼠标抬起才触发，那时 isShown 已经是 false。只看 isShown 的话，
+    /// 再次点击图标会被当成"当前没开"，于是关掉后立刻重开，永远关不掉。
+    private var popoverClosingSince: Date?
 
     /// 刷新状态管理器（从 dataManager 引用）
     var refreshState: RefreshState {
@@ -98,8 +104,21 @@ class MenuBarManager: ObservableObject {
 
     init() {
         ui.configureClickHandler(target: self, action: #selector(handleClick))
+        setupPopoverCloseObserver()
         setupDataBindings()
         setupSettingsObservers()
+    }
+
+    /// 监听 popover 关闭。AppKit 自行关闭时不会走 closePopover()，
+    /// 关闭时刻和定时器回收都只能从这里拿到。
+    private func setupPopoverCloseObserver() {
+        NotificationCenter.default.publisher(for: NSPopover.willCloseNotification, object: ui.popover)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.popoverClosingSince = Date()
+                self?.dataManager.stopPopoverRefreshTimer()
+            }
+            .store(in: &cancellables)
     }
 
     /// 设置数据绑定
@@ -370,15 +389,23 @@ class MenuBarManager: ObservableObject {
     @objc func togglePopover() {
         guard let button = ui.statusItem.button else { return }
 
-        if ui.popover.isShown {
+        if ui.popover.isShown || popoverClosedByThisClick {
             closePopover()
         } else {
             openPopover(relativeTo: button)
         }
     }
 
+    /// 本次点击的 mouseDown 是否刚把 popover 关掉（见 popoverClosingSince）
+    private var popoverClosedByThisClick: Bool {
+        guard let since = popoverClosingSince else { return false }
+        return Date().timeIntervalSince(since) < 0.25
+    }
+
     /// 打开弹出窗口
     private func openPopover(relativeTo button: NSStatusBarButton) {
+        popoverClosingSince = nil
+
         // 智能刷新数据
         dataManager.refreshOnPopoverOpen()
 
