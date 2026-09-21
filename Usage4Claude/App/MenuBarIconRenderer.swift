@@ -208,8 +208,8 @@ class MenuBarIconRenderer {
         }
         let size = NSSize(width: metricIconSize, height: metricIconSize)
         return isMonochrome
-            ? createCircleTemplateImage(percentage: 0, size: size, button: button, removeBackground: true)
-            : createCircleImage(percentage: 0, size: size, button: button, removeBackground: true)
+            ? createCircleTemplateImage(state: displayState(usedPercentage: 0, isPlaceholder: true), size: size, button: button, removeBackground: true)
+            : createCircleImage(state: displayState(usedPercentage: 0, isPlaceholder: true), size: size, button: button, removeBackground: true)
     }
 
     // MARK: - Multi-Provider Icon Creation

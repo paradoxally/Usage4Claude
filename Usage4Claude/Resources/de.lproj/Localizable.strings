@@ -67,6 +67,10 @@
 "settings.general.interface_language" = "Oberflächensprache";
 "settings.general.language_hint" = "Ändert die Anzeigesprache der Oberfläche";
 "settings.general.reset_button" = "Alles auf Standard zurücksetzen";
+"settings.general.all_accounts_section" = "Mehrere Konten";
+"settings.general.all_accounts_hint" = "Alle Claude-Konten gleichzeitig anzeigen";
+"settings.general.show_all_accounts" = "Alle Konten in der Menüleiste anzeigen";
+"settings.general.all_accounts_description" = "Jedes Claude-Konto zeigt seinen eigenen 5-Stunden-Ring in der Menüleiste. Ein Klick öffnet eine Spalte pro Konto. Erfordert mindestens zwei Konten.";
 "icon_style.color_translucent" = "Farbig transparent";
 "icon_style.color_with_background" = "Farbig mit Hintergrund";
 "icon_style.monochrome" = "Einfarbig";
