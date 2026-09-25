@@ -49,8 +49,29 @@ struct ClaudeColumnView: View {
 
     private func dataView(_ data: UsageData) -> some View {
         VStack(spacing: 15) {
-            ringSection(data)
+            switch UserSettings.shared.graphDisplayType {
+            case .ring:
+                ringSection(data)
+            case .pace:
+                paceSection(data)
+            }
             limitRows(data)
+        }
+    }
+
+    private func paceSection(_ data: UsageData) -> some View {
+        PaceGraphView(
+            usageData: data,
+            activeDisplayTypes: activeDisplayTypes,
+            isRefreshing: isClaudeRefreshing,
+            showRemainingMode: showRemainingMode
+        )
+        .frame(height: 114)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if refreshState.canRefresh && !refreshState.isRefreshing {
+                onRefresh?()
+            }
         }
     }
 
