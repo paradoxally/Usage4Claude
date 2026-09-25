@@ -18,7 +18,6 @@ struct ClaudeColumnView: View {
     let refreshState: RefreshState
     @Binding var animationType: UsageDetailView.LoadingAnimationType
     @Binding var rotationAngle: Double
-    let remainingModeAnimationTrigger: Int
     var onRefresh: (() -> Void)?
     var onAnimationHint: ((String) -> Void)?
     var onToggleRemainingMode: (() -> Void)?
@@ -73,12 +72,11 @@ struct ClaudeColumnView: View {
                 if isClaudeRefreshing {
                     loadingAnimation()
                 } else {
-                    Circle()
-                        .trim(from: primaryRingRange.from, to: primaryRingRange.to)
+                    UsageRingArc(primaryRingRange)
                         .stroke(primaryRingColor, style: StrokeStyle(lineWidth: 10, lineCap: .round))
                         .frame(width: 100, height: 100)
                         .rotationEffect(.degrees(-90))
-                        .animation(.spring(response: 0.42, dampingFraction: 0.78, blendDuration: 0.05), value: primaryRingRange)
+                        .animation(UsageRingDisplay.toggleAnimation, value: primaryRingRange)
                 }
 
                 if activeDisplayTypes.contains(.fiveHour) && activeDisplayTypes.contains(.sevenDay) {
@@ -97,23 +95,13 @@ struct ClaudeColumnView: View {
                         if isClaudeRefreshing {
                             outerLoadingAnimation()
                         } else {
-                            Circle()
-                                .trim(from: outerRingRange.from, to: outerRingRange.to)
+                            UsageRingArc(outerRingRange)
                                 .stroke(colorForSevenDay(percentage), style: StrokeStyle(lineWidth: 3, lineCap: .round))
                                 .frame(width: 114, height: 114)
                                 .rotationEffect(.degrees(-90))
-                                .animation(.spring(response: 0.42, dampingFraction: 0.78, blendDuration: 0.05), value: outerRingRange)
+                                .animation(UsageRingDisplay.toggleAnimation, value: outerRingRange)
                         }
                     }
-                }
-
-                if !isClaudeRefreshing {
-                    DetailUsageRingSweep(
-                        trigger: remainingModeAnimationTrigger,
-                        diameter: 122,
-                        lineWidth: 3,
-                        color: primaryRingColor
-                    )
                 }
 
                 DetailUsageRingCenterText(

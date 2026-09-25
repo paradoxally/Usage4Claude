@@ -933,11 +933,10 @@ struct UsageDetailView: View {
                             refreshState: refreshState,
                             animationType: $claudeAnimationType,
                             rotationAngle: $rotationAngle,
-                            remainingModeAnimationTrigger: remainingModeAnimationTrigger,
                             onRefresh: { onMenuAction?(.refresh) },
                             onAnimationHint: { showAnimationHint($0, provider: .claude) },
                             onToggleRemainingMode: toggleRemainingMode,
-                            onOpenAuthSettings: { onMenuAction?(.authSettings) }
+                            onOpenAuthSettings: { onMenuAction?(.accounts) }
                         )
                     }
                     .frame(width: accountColumnWidth, alignment: .top)
